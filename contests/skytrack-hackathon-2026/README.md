@@ -1,25 +1,102 @@
-# Writing `stress_area` from a Python mission
+# SkyTrack Hackathon 2026 — Python mission guide
 
-When the mission is written in Python (`local_planner` / `skytrack_autonomy`), **the framework
-does not produce the stressed-crop areas for you**. You have to write the detection result to one
-specific file. After the mission ends the desktop app collects that file and attaches it to the
-mission report at `status_summary.extras.stress_area`. If the file is missing, in the wrong place
-or in the wrong format, the report carries no `stress_area` and the detection part scores nothing.
+What you need to know when you write the mission in Python (`local_planner` / `skytrack_autonomy`):
 
-A complete example lives in this folder: [`hackathon_example_v1.py`](hackathon_example_v1.py) —
-survey the field, find the yellow crop, write `stress_area`, spray it, land.
+1. [Braking, pausing and stopping a mission](#braking-pausing-and-stopping-a-mission)
+2. [Writing `stress_area` from a Python mission](#writing-stress_area-from-a-python-mission)
+3. [Using your own detection model](#using-your-own-detection-model)
+
+What else is in this folder:
+
+| File | What it is |
+|---|---|
+| [`hackathon_example_v1.py`](hackathon_example_v1.py) | A complete mission: survey the field, find the yellow crop, write `stress_area`, spray it, land |
+| [`sample_ai_model.zip`](sample_ai_model.zip) | A sample stressed-crop detector and its catalogue file |
+| [`spray_drone_specs.md`](spray_drone_specs.md) | The camera and the nozzle: numbers for mapping pixels to the ground and planning spray lanes |
+| [`spray_grading.md`](spray_grading.md) | How a spray run is scored |
 
 The same guide as a handout:
 [`Stress-Area-Detection-Guide.pdf`](Stress-Area-Detection-Guide.pdf).
 
-## Why Python code mode
+## Braking, pausing and stopping a mission
+
+There is no separate "break" call. A mission is a Python generator, so you brake with a step,
+leave it with plain Python, and an operator stops it with a ROS topic.
+
+### Brake: stop and hover
+
+`brake()` is a step like `fly_to()`. It holds the drone where it is until its horizontal speed
+has settled, then the mission goes on to the next step.
+
+```python
+from local_planner import brake, fly_to, land, takeoff
+
+
+def my_mission(ctx):
+    yield takeoff(alt_m=5.0)
+    yield fly_to(north=50.0, east=0.0, alt_m=5.0)
+    yield brake()                   # hover until the drone has settled
+    yield land()
+```
+
+Always `yield brake()` right before `land()`, and before a `capture()` if you want a sharp frame.
+
+### End the mission early, from inside it
+
+Use Python: `break` leaves a loop, `return` ends the mission. Land before you leave. A
+`try` / `finally` makes the landing happen however the loop ends:
+
+```python
+def my_mission(ctx):
+    yield takeoff(alt_m=5.0)
+    try:
+        for x, y in WAYPOINTS_ENU:
+            if ctx.senses.battery.remaining < 0.3:
+                break                       # stop early
+            yield fly_to(north=y, east=x, alt_m=5.0)
+    finally:
+        yield brake()
+        yield land()
+```
+
+### Pause, cancel or stop it from outside
+
+The mission node listens on three topics. Each one overrides whatever the mission is doing.
+
+| Topic (`std_msgs/Bool`) | `data: true` | `data: false` |
+|---|---|---|
+| `/pause_mission` | Holds the drone where it is | The mission carries on |
+| `/cancel_mission` | Cancels the mission | Clears the cancel, ready for a new mission |
+| `/emergency_stop` | Hard stop, then the drone **lands where it is** | Releases the stop |
+
+From a terminal on your machine, with the simulation running:
+
+```bash
+C=skytrack-simulation-skytrack-autonomy-1
+docker exec $C bash -lc 'source /opt/ros/jazzy/setup.bash && \
+  ros2 topic pub --once /pause_mission std_msgs/msg/Bool "{data: true}"'
+```
+
+`/emergency_stop` is for emergencies: it lands wherever the drone happens to be.
+
+## Writing `stress_area` from a Python mission
+
+When the mission is written in Python, **the framework does not produce the stressed-crop areas
+for you**. You have to write the detection result to one specific file. After the mission ends
+the desktop app collects that file and attaches it to the mission report at
+`status_summary.extras.stress_area`. If the file is missing, in the wrong place or in the wrong
+format, the report carries no `stress_area` and the detection part scores nothing.
+
+A complete example lives in this folder: [`hackathon_example_v1.py`](hackathon_example_v1.py).
+
+### Why Python code mode
 
 The AI model in the UI only supports **detection models** (bounding boxes), not
 **segmentation**. A `stress_area` is defined by the outline (polygon) of the stressed patch, so if
 you want the real shape instead of a rectangle, use **Python code mode**: run your own model or
 algorithm, work out the stressed areas in ENU coordinates, and write the polygons yourself.
 
-## The path
+### The path
 
 ```
 /root/.ros/captures/stress_area.json
@@ -39,7 +116,7 @@ Notes:
   when the mission ends is what gets collected.
 - **Write before landing** — right after the survey stage, for example. Never after `land()`.
 
-## Format
+### Format
 
 ```json
 {
@@ -68,7 +145,7 @@ Also:
   `east, north = pose.y, pose.x`.
 - Polygons with fewer than 3 vertices are dropped. Filter out tiny areas yourself to avoid noise.
 
-## Where this happens in the example
+### Where this happens in the example
 
 File: [`hackathon_example_v1.py`](hackathon_example_v1.py)
 
@@ -105,76 +182,65 @@ written.
 ## Using your own detection model
 
 The UI's AI model list is fixed. To detect with a model of your own — or with the sample one —
-install it from your Python mission. A ready-made sample ships next to this guide:
-[`sample_ai_model.zip`](sample_ai_model.zip).
+put its two files, the ONNX weights and a catalogue JSON, in the drone's user model folder, then
+ask for it by name from your Python mission.
+
+### The sample model
+
+A ready-made sample ships next to this guide: [`sample_ai_model.zip`](sample_ai_model.zip).
 
 | File in the zip | What it is |
 |---|---|
 | `sample_ai_model/det-h2026-v26n-b-fp32-640.onnx` | Detector for stressed crop, 640×640, fp32 |
-| `sample_ai_model/sample.json` | Its catalogue entry: one dataset class, `stressed` |
+| `sample_ai_model/sample.json` | Its catalogue: one dataset class, `stressed` |
 
 Bring your own model in the same shape:
 
 - **ONNX, end-to-end export.** Output `[1, N, 6]` = `(x1, y1, x2, y2, score, class_id)` in input
   pixels. The detector runs no NMS of its own.
-- **The file is named after the model id**: `<model id>.onnx`, where the id is the key under
-  `models` in the JSON.
+- **The weights are named after the model id**: `<model id>.onnx`, where the id is the key under
+  `models` in the JSON. Ids may only use letters, digits, `.`, `_` and `-`, and must not be the id
+  of a built-in model.
+- **The JSON declares the model's dataset** in its own `dataset` section, with a non-empty
+  `classes` list. Do not reuse the name of a built-in dataset with different classes.
 - **`classes` order is `class_id` order**: `classes[0]` is class id 0, and so on.
+- **Each `object_mapping` entry is an object** with a `models` list, as in `sample.json` — not a
+  bare list.
 - **Ask for a class by its exact name.** The `classes` you request must be names from the
   dataset's `classes` (case does not matter). `object_mapping` is only a hint for the UI.
 
-### 1. Copy the zip into the drone container
+### 1. Copy the two files into the user model folder
 
-From a terminal on your machine, with the simulation running:
+The folder is `/tmp/skytrack-session/data` in the drone container. The detector reads every
+`*.json` in it as a catalogue, and takes a model's weights from `<model id>.onnx` in the same
+folder. From a terminal on your machine, with the simulation running:
 
 ```bash
+unzip sample_ai_model.zip
 C=skytrack-simulation-skytrack-autonomy-1
-docker exec $C mkdir -p /var/www/files/ai_models
-docker cp sample_ai_model.zip $C:/var/www/files/ai_models/
+docker exec $C mkdir -p /tmp/skytrack-session/data
+docker cp sample_ai_model/det-h2026-v26n-b-fp32-640.onnx $C:/tmp/skytrack-session/data/
+docker cp sample_ai_model/sample.json $C:/tmp/skytrack-session/data/
 ```
 
-`/var/www/files` is a Docker volume, so the zip survives the app recreating the containers
-between missions. Anything outside it — `/opt/skytrack/ai` included — is reset each time, which is
-why the mission installs the model again every run.
+- Put both files straight in the folder, side by side, not in a subfolder.
+- Nothing needs restarting: the detector picks the model up on its next request. Copying new
+  weights under the same name takes effect on the next request too.
+- The built-in models stay available.
+- `/tmp` is reset whenever the app recreates the containers. Check the files are still there
+  before each run, and copy them again if not:
 
-### 2. Install it when the mission starts
+  ```bash
+  docker exec $C ls /tmp/skytrack-session/data
+  ```
 
-```python
-import json
-import zipfile
-from pathlib import Path
+- A file that is not accepted — broken JSON, an id already taken, a dataset missing — is skipped
+  with a warning in the detector's log, and asking for that model then fails with
+  `Unknown model`.
 
-AI_ROOT = Path("/opt/skytrack/ai")                                  # the detector's catalogue
-MODEL_ZIP = Path("/var/www/files/ai_models/sample_ai_model.zip")    # where you docker cp'd it
+### 2. Detect with it
 
-
-def install_model(zip_path: Path = MODEL_ZIP, ai_root: Path = AI_ROOT) -> list[str]:
-    """Copy the zip's ONNX weights into the catalogue and register them. Returns the model ids."""
-    with zipfile.ZipFile(zip_path) as archive:
-        names = [n for n in archive.namelist() if not n.startswith("__MACOSX/")]
-        manifest = json.loads(archive.read(next(n for n in names if n.endswith(".json"))))
-        for model_id in manifest["models"]:
-            weights = next(n for n in names if n.endswith(f"/{model_id}.onnx") or n == f"{model_id}.onnx")
-            target = ai_root / "common" / f"{model_id}.onnx"
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(archive.read(weights))
-
-    mapping_path = ai_root / "mapping.json"
-    catalogue = json.loads(mapping_path.read_text())
-    for section in ("dataset", "models", "object_mapping"):
-        catalogue.setdefault(section, {}).update(manifest.get(section, {}))
-    tmp = mapping_path.with_name(".mapping.json.tmp")               # atomic: the detector re-reads it live
-    tmp.write_text(json.dumps(catalogue, indent=4))
-    tmp.replace(mapping_path)
-    return list(manifest["models"])
-```
-
-The built-in models stay available, and running it twice is harmless. The detector picks up the
-new catalogue on its next request; nothing needs restarting.
-
-### 3. Detect with it
-
-Install before the drone boots, then register the `Detector` service with your model:
+Register the `Detector` service with your model before the drone flies:
 
 ```python
 from local_planner import boot_drone
@@ -185,7 +251,6 @@ CLASSES = ["stressed"]
 
 
 def main() -> None:
-    install_model()
     with boot_drone() as drone:
         drone.add_service(Detector(model_name=MODEL_NAME, classes=CLASSES))
         drone.fly(my_mission)
