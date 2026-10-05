@@ -1,18 +1,18 @@
-"""Custom fly_to skill — tu viet mot skill bay thang toi mot diem.
+"""Custom fly_to skill — write your own skill that flies straight to a point.
 
-Vi du toi gian cho Skill protocol (xem ``docs/tutorial-add-skill.md``
-trong skytrack-autonomy). Mot skill chi can:
+Minimal example of the Skill protocol (see ``docs/tutorial-add-skill.md``
+in skytrack-autonomy). A skill only needs:
 
-* ``name``                    — nhan dung trong log
-* ``start(ctx, params=None)`` — chup trang thai, dang ky callback
-* ``cancel(ctx, reason)``     — huy callback, idempotent
-* ``is_done`` (property)      — True thi mission chay buoc tiep theo
+* ``name``                    — label used in logs
+* ``start(ctx, params=None)`` — snapshot state, register callbacks
+* ``cancel(ctx, reason)``     — remove callbacks, idempotent
+* ``is_done`` (property)      — when True, the mission runs the next step
 
-``SimpleFlyToSkill`` bay doan thang tu vi tri hien tai toi ``(north,
-east, alt_m)`` theo profile toc do hinh thang (tang toc → bay deu →
-giam toc), publish setpoint 10 Hz, giu nguyen heading luc bat dau.
-KHONG co planner, KHONG tranh vat can — chi dung khi duong bay trong.
-Can tranh vat can thi dung ``fly_to`` co san.
+``SimpleFlyToSkill`` flies a straight segment from the current position to
+``(north, east, alt_m)`` with a trapezoidal speed profile (accelerate →
+cruise → decelerate), publishes setpoints at 10 Hz, and holds the heading
+from the start. NO planner, NO obstacle avoidance — only use it when the
+path is clear. For obstacle avoidance use the built-in ``fly_to``.
 
 Run::
 
@@ -33,10 +33,10 @@ TAG = "[SIMPLE_FLY]"
 # ── Skill ──────────────────────────────────────────────────────────
 
 class SimpleFlyToSkill:
-    """Bay thang toi ``(north, east, alt_m)``, giu heading, khong planner."""
+    """Fly straight to ``(north, east, alt_m)``, hold heading, no planner."""
 
     name = "simple_fly_to"
-    PUBLISH_HZ = 10.0            # PX4 can >= 2 Hz de giu OFFBOARD; quy uoc 10 Hz
+    PUBLISH_HZ = 10.0            # PX4 needs >= 2 Hz to stay in OFFBOARD; 10 Hz by convention
 
     def __init__(
         self,
@@ -50,19 +50,19 @@ class SimpleFlyToSkill:
         settle_speed_m_s: float = 0.2,
         timeout_s: float = 60.0,
     ) -> None:
-        # Mission-NED: z am huong len.
+        # Mission-NED: negative z points up.
         self._target = (float(north), float(east), -float(alt_m))
         self._v = float(speed_m_s)
         self._a = float(accel_m_s2)
         self._tol = float(tolerance_m)
         self._settle_v = float(settle_speed_m_s)
         self._timeout_s = float(timeout_s)
-        # Trang thai moi lan chay — gan trong ``start``.
+        # Per-run state — assigned in ``start``.
         self._ctx: Any = None
         self._handle: Optional[ScheduleHandle] = None
         self._t0: Optional[float] = None
-        self._start = None           # (x, y, z) luc bat dau
-        self._dir = (0.0, 0.0, 0.0)  # vector don vi start → target
+        self._start = None           # (x, y, z) at start
+        self._dir = (0.0, 0.0, 0.0)  # unit vector start → target
         self._length = 0.0
         self._yaw = math.nan
         self._result: Optional[str] = None   # "reached" | "timeout"
@@ -76,11 +76,11 @@ class SimpleFlyToSkill:
         pose = ctx.senses.pose.current_position
         if pose is not None:
             self._plan_from(pose)
-        # Giao quyen dieu khien cho setpoint cua minh (PX4 OFFBOARD).
+        # Hand control over to our own setpoints (PX4 OFFBOARD).
         ctx.world.publish_enable_to_fly(True)
         ctx.world.engage_external_control()
-        # CONTROL group cho callback tan so cao (setpoint);
-        # DECISION group danh cho planning / monitor 5 Hz.
+        # CONTROL group is for high-rate callbacks (setpoints);
+        # DECISION group is for 5 Hz planning / monitoring.
         self._handle = ctx.scheduler.schedule(
             self._tick, hz=self.PUBLISH_HZ, group=ScheduleGroup.CONTROL,
             name=self.name, now=ctx.world.now())
@@ -90,8 +90,8 @@ class SimpleFlyToSkill:
             f"v={self._v:.1f} m/s)")
 
     def cancel(self, ctx: Any, reason: str) -> None:
-        # Phai idempotent va khong crash neu start chua chay. Runtime goi
-        # cancel ca khi skill da xong binh thuong (buoc tiep theo thay the).
+        # Must be idempotent and must not crash if start never ran. The runtime
+        # calls cancel even when the skill finished normally (next step takes over).
         if self._handle is not None:
             ctx.scheduler.unschedule(self._handle)
             self._handle = None
@@ -104,10 +104,10 @@ class SimpleFlyToSkill:
 
     @property
     def result(self) -> Optional[str]:
-        """``"reached"`` / ``"timeout"`` sau khi xong, ``None`` khi dang bay."""
+        """``"reached"`` / ``"timeout"`` once finished, ``None`` while flying."""
         return self._result
 
-    # ── Duong bay ────────────────────────────────────────────────────
+    # ── Path ─────────────────────────────────────────────────────────
 
     def _plan_from(self, pose: Any) -> None:
         self._start = (float(pose.x), float(pose.y), float(pose.z))
@@ -115,24 +115,24 @@ class SimpleFlyToSkill:
         self._length = math.sqrt(sum(c * c for c in d))
         self._dir = (tuple(c / self._length for c in d)
                      if self._length > 1e-6 else (0.0, 0.0, 0.0))
-        self._yaw = float(pose.heading)    # giu heading luc bat dau
+        self._yaw = float(pose.heading)    # hold heading from start
 
     def _profile(self, t: float):
-        """Quang duong ``s`` va toc do ``v`` doc doan thang tai thoi diem
-        ``t`` — hinh thang (hoac tam giac neu doan qua ngan)."""
+        """Distance ``s`` and speed ``v`` along the segment at time ``t`` —
+        trapezoidal (or triangular if the segment is too short)."""
         a, L = self._a, self._length
-        v_peak = min(self._v, math.sqrt(a * L))      # tam giac neu L ngan
+        v_peak = min(self._v, math.sqrt(a * L))      # triangular if L is short
         t_acc = v_peak / a
         d_acc = 0.5 * a * t_acc * t_acc
         t_cruise = max(0.0, (L - 2.0 * d_acc) / v_peak) if v_peak > 0 else 0.0
-        if t < t_acc:                                  # tang toc
+        if t < t_acc:                                  # accelerate
             return 0.5 * a * t * t, a * t
-        if t < t_acc + t_cruise:                       # bay deu
+        if t < t_acc + t_cruise:                       # cruise
             return d_acc + v_peak * (t - t_acc), v_peak
-        td = t - t_acc - t_cruise                      # giam toc
+        td = t - t_acc - t_cruise                      # decelerate
         if td < t_acc:
             return L - 0.5 * a * (t_acc - td) ** 2, v_peak - a * td
-        return L, 0.0                                  # da toi dich
+        return L, 0.0                                  # reached target
 
     # ── Callback 10 Hz (CONTROL group) ───────────────────────────────
 
@@ -140,9 +140,9 @@ class SimpleFlyToSkill:
         ctx = self._ctx
         pose = ctx.senses.pose.current_position
         if pose is None:
-            return                                     # chua co pose
+            return                                     # no pose yet
         if self._start is None:
-            self._plan_from(pose)                      # pose den tre
+            self._plan_from(pose)                      # pose arrived late
 
         elapsed = ctx.world.now() - self._t0
         s, v = self._profile(elapsed)
@@ -153,7 +153,7 @@ class SimpleFlyToSkill:
             yaw=self._yaw, yaw_rate=0.0)
 
         if self._result is not None:
-            return       # da xong: van giu setpoint o dich toi khi bi thay the
+            return       # done: keep holding the target setpoint until replaced
         dist = math.dist((pose.x, pose.y, pose.z), self._target)
         speed = math.sqrt(pose.vx ** 2 + pose.vy ** 2 + pose.vz ** 2)
         if s >= self._length and dist < self._tol and speed < self._settle_v:
@@ -166,20 +166,20 @@ class SimpleFlyToSkill:
         log = (self._ctx.world.log_info if result == "reached"
                else self._ctx.world.log_warn)
         log(f"{TAG} {result}: {dist:.2f} m from target after {elapsed:.1f}s")
-        # Danh thuc arbiter de mission sang buoc tiep ngay tick nay.
+        # Wake the arbiter so the mission advances to the next step this tick.
         self._ctx.notify_state_change()
 
 
 # ── Mission ────────────────────────────────────────────────────────
 
 def custom_fly_to_mission(ctx: Any) -> Iterator[Any]:
-    """Cat canh 3 m, bay thang 4 m ve phia bac bang skill tu viet, quay
-    ve, ha canh."""
+    """Take off to 3 m, fly 4 m straight north with the custom skill, fly
+    back, land."""
     yield takeoff(alt_m=ALT_M)
     yield brake(name="settle_after_takeoff")
 
     out = SimpleFlyToSkill(north=4.0, east=0.0, alt_m=ALT_M)
-    yield out                          # skill tran — runtime tu boc SkillStep
+    yield out                          # bare skill — runtime wraps it in a SkillStep
     if out.result != "reached":
         ctx.world.log_warn(f"{TAG} outbound leg {out.result} — landing here")
         yield brake(name="pre_land")
@@ -191,7 +191,7 @@ def custom_fly_to_mission(ctx: Any) -> Iterator[Any]:
     yield land()
 
 
-# Cac sense framework phai co san truoc khi mission chay.
+# Framework senses that must be available before the mission runs.
 custom_fly_to_mission.requires_senses = ["pose", "obstacle", "status"]
 
 
