@@ -81,6 +81,9 @@ Built-in models and their classes, from `/opt/skytrack/ai/mapping.json` in the d
 | `det-firesmoke-v26n-b-quantized-fp16` | `fire`, `smoke` |
 | `det-h2026-v26n-b-fp32-640` | `stressed` |
 
+**Simulation run (2026-10-08):** all three models answered (`coco` 647 ms, `visdrone` 766 ms,
+`firesmoke` 626 ms), 0 boxes each, which is expected in an empty world; the mission landed.
+
 Boxes come back in image pixels. To turn one into a ground position, use "Pixel to ground" in
 [spray_drone_specs.md](../contests/skytrack-hackathon-2026/spray_drone_specs.md).
 
@@ -140,6 +143,9 @@ C=skytrack-simulation-skytrack-autonomy-1
 docker exec $C cat /tmp/sae/rescue_locations.txt
 docker cp $C:/tmp/sae/rescue_locations.txt .
 ```
+
+**Simulation run (2026-10-08):** the log shows
+`[RESCUE] saved to /tmp/sae/rescue_locations.txt`, and the file holds exactly the 3 lines above.
 
 Lines from an earlier run stay in the file. Delete it before a new run if needed:
 `docker exec $C rm -f /tmp/sae/rescue_locations.txt`.

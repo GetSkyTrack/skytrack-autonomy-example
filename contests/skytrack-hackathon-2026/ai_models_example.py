@@ -79,7 +79,7 @@ def ai_models_mission(ctx: Any) -> Iterator[Any]:
         if outcome is None:
             continue
         log(f"{TAG} {model}: {outcome.num_detections} box(es) "
-            f"in {outcome.inference_time_ms} ms")
+            f"in {outcome.inference_time_ms or 0:.0f} ms")
         for det in outcome.detections:
             log(f"{TAG}   {det.class_name} {det.score:.0%} at pixel "
                 f"({det.bbox.center_x:.0f}, {det.bbox.center_y:.0f})")
