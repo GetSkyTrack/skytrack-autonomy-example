@@ -32,7 +32,8 @@ def fake_ctx(battery_percent=90.0):
         "geofence": fence,
     })
     fence.attach(ctx.world)
-    for service in ("recorder", "snapshot", "sprayer", "detector", "telemetry"):
+    for service in ("recorder", "snapshot", "sprayer", "detector", "telemetry",
+                    "gimbal"):
         ctx.services.register(service, MagicMock(name=service))
     return ctx
 

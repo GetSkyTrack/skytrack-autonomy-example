@@ -107,6 +107,7 @@ The quickest success check is the report's last event:
 | | [record_video_mission.py](examples/record_video_mission.py) | `VideoRecorder` + `Snapshot` services. |
 | | [spray_mission.py](examples/spray_mission.py) | `Sprayer`; hover until the valve confirms with a `SkillStep`. |
 | | [detect_mission.py](examples/detect_mission.py) | `Detector`; wait for the result; react to it. |
+| | [gimbal_mission.py](examples/gimbal_mission.py) | `Gimbal`; point, pan and center the camera; hover until the `gimbal` sense reports arrival; `capture` a photo of each view. |
 | **5 · Build your own** | [custom_sense_mission.py](examples/custom_sense_mission.py) | Write a **sense**: `GeofenceSense`. |
 | | [custom_skill_mission.py](examples/custom_skill_mission.py) | Write **skills**: `HoverForSeconds`, `ClimbBy`. |
 | | [custom_service_mission.py](examples/custom_service_mission.py) | Write a **service**: CSV `TelemetryLogger`. |
@@ -135,6 +136,7 @@ All examples were run on 2026-09-22 in the SkyTrack simulation stack
 | record_video | ✅ Succeeded | 1 min 10 s | camera drone; 56 frames, 2 stills |
 | detect | ✅ Succeeded | 1 min 22 s | camera drone; 2 detections run, 0 hits (empty world) |
 | spray | ⏸ Not tested | | needs a drone with a spray valve |
+| gimbal | ⏸ Not tested | | needs a drone with a camera gimbal |
 | custom_sense | ✅ Succeeded | 59 s | skipped the 2 waypoints outside the fence |
 | custom_skill | ✅ Succeeded | 1 min 4 s | |
 | custom_service | ✅ Succeeded | 1 min 15 s | 217 CSV rows with all notes |

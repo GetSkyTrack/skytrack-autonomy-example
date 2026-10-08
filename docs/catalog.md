@@ -166,6 +166,7 @@ Import from `skytrack_autonomy`.
 | `Snapshot()` | `snapshot` | `snap(filename=None)` → path or `None` | Saves one still photo without stopping the drone (unlike `capture`). |
 | `Detector(model_name=..., classes=[...])` | `detector` | `request(...)` → `bool`, `is_busy`, `last_result`, `cancel()` | Runs one object detection at a time on the world's detector. The answer arrives later (about 1–1.5 s in simulation); wait for `not is_busy` before reading `last_result`. Verified with `model_name="det-coco-v26n-b-quantized-fp16"`, `classes=["human"]`. |
 | `Sprayer()` | `sprayer` | `on()`, `off()` → `bool`, `state`, `is_settled` | Opens and closes the spray valve. |
+| `Gimbal()` | `gimbal` | `point(pitch_deg=, yaw_deg=)`, `center()`, `rate(yaw=, pitch=)`, `stop()` → request id or `None`, `result(id)`, `target`, `is_turning` | Aims the camera gimbal without touching flight. Registers the `gimbal` sense. Stops turning on pause, abort and mission end. |
 
 ```python
 from skytrack_autonomy import Sprayer
@@ -194,6 +195,7 @@ Write your own by implementing the `FrameSink` protocol (`open`, `write`, `close
 Examples: [record_video_mission.py](../examples/record_video_mission.py),
 [spray_mission.py](../examples/spray_mission.py),
 [detect_mission.py](../examples/detect_mission.py),
+[gimbal_mission.py](../examples/gimbal_mission.py),
 [custom_service_mission.py](../examples/custom_service_mission.py).
 
 ---
