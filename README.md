@@ -100,6 +100,9 @@ The quickest success check is the report's last event:
 | | [lawnmower_mission.py](examples/lawnmower_mission.py) | Generated sweep lines, `mode="coverage"`, `replan_mode="fast"`. |
 | **3 · Mission logic** | [compose_mission.py](examples/compose_mission.py) | Reusable sub-missions with `yield from`. |
 | | [battery_check_mission.py](examples/battery_check_mission.py) | Read pose / status / battery; branch; return home early. |
+| | [no_fly_zone_mission.py](examples/no_fly_zone_mission.py) | No-fly zone file; `split_nfz`; coverage vs transit legs around a zone. |
+| | [tuning_config_mission.py](examples/tuning_config_mission.py) | Tune the planner: YAML (path finder, replanning, obstacle retention, vehicle size), ROS parameters, per-leg `fly_to` settings. |
+| | [avoidance_algorithm_mission.py](examples/avoidance_algorithm_mission.py) | Switch the avoidance algorithm per leg (A*, Theta*, Lazy Theta*, replan strategy, direct); plug in your own path finder. |
 | **4 · Camera & services** | [capture_photos_mission.py](examples/capture_photos_mission.py) | `CameraSense`, `yaw_to` → `brake` → `capture`. |
 | | [record_video_mission.py](examples/record_video_mission.py) | `VideoRecorder` + `Snapshot` services. |
 | | [spray_mission.py](examples/spray_mission.py) | `Sprayer`; hover until the valve confirms with a `SkillStep`. |
