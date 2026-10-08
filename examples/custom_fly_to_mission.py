@@ -1,5 +1,7 @@
 """Custom fly_to skill — write your own skill that flies straight to a point.
 
+Level 5 · Build your own
+
 Minimal example of the Skill protocol (see ``docs/tutorial-add-skill.md``
 in skytrack-autonomy). A skill only needs:
 
