@@ -108,6 +108,7 @@ The quickest success check is the report's last event:
 | | [spray_mission.py](examples/spray_mission.py) | `Sprayer`; hover until the valve confirms with a `SkillStep`. |
 | | [detect_mission.py](examples/detect_mission.py) | `Detector`; wait for the result; react to it. |
 | | [gimbal_mission.py](examples/gimbal_mission.py) | `Gimbal`; point, pan and center the camera; hover until the `gimbal` sense reports arrival; `capture` a photo of each view. |
+| | [gimbal_photo_mission.py](examples/gimbal_photo_mission.py) | Out-and-back flight: fly to (0, 10, 2), gimbal straight down, one photo, fly back and land. |
 | **5 · Build your own** | [custom_sense_mission.py](examples/custom_sense_mission.py) | Write a **sense**: `GeofenceSense`. |
 | | [custom_skill_mission.py](examples/custom_skill_mission.py) | Write **skills**: `HoverForSeconds`, `ClimbBy`. |
 | | [custom_service_mission.py](examples/custom_service_mission.py) | Write a **service**: CSV `TelemetryLogger`. |
