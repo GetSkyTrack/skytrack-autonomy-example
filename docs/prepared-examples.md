@@ -37,7 +37,10 @@ photo → pan right 4 s → photo → center → fly home → land. Each aim hov
 reports the angle, or 5 s pass. Photos go to `~/.ros/captures/gimbal_<view>.png`.
 
 ```python
+GIMBAL_CAMERA_ID = "cam_0"
+
 def main() -> None:
+    sys.argv += ["--ros-args", "-p", f"gimbal_camera_id:={GIMBAL_CAMERA_ID}"]
     with boot_drone() as drone:
         drone.add_sense(CameraSense())
         drone.add_service(Gimbal())          # also registers the gimbal sense
@@ -45,11 +48,35 @@ def main() -> None:
         drone.run()
 ```
 
-**Simulation run (2026-10-08):** the mission completed and saved all 3 photos, but every gimbal
-command failed with `No gimbal service on '/skytrack/camera/minipro/gimbal_control'`. That
-service has no server in the simulation; the simulated controller serves
-`/skytrack/camera/front/gimbal_control` and `/skytrack/camera/cam_0/gimbal_control`. The app
-and the simulation disagree on the camera id; the example code is not the cause.
+### Two things to get right
+
+**1. The gimbal camera id.** The app sends gimbal commands to
+`/skytrack/camera/<gimbal_camera_id>/gimbal_control`, default `minipro`. In the simulation only
+`cam_0` has a server (`ros2 service info /skytrack/camera/cam_0/gimbal_control` →
+`Services count: 1`); with `minipro` or `front` every command fails with
+`No gimbal service on '...'`. The example sets the `gimbal_camera_id` ROS parameter in `main()`.
+
+**2. Fresh frames before a photo.** `/camera` is the camera on the gimbal (the bridge maps
+Gazebo `/minipro/gimbal/image` to it), but it only gives about 1 frame/s in flight, and
+`capture` saves the latest frame it already has. A photo taken right after the gimbal arrives
+can be an old frame from before the move. `photo()` therefore hovers until the camera has
+delivered 2 new frames (`ctx.senses.camera.seq`), then captures:
+
+```python
+def photo(ctx, view):
+    seq0 = ctx.senses.camera.seq
+    yield hover_until(lambda c: c.senses.camera.seq >= seq0 + FRESH_FRAMES,
+                      timeout_s=FRAME_WAIT_S, ctx=ctx, name=f"fresh_frame_{view}")
+    yield capture(output_dir=OUTPUT_DIR, filename=f"gimbal_{view}.png", name=f"photo_{view}")
+
+yield from photo(ctx, "down")
+```
+
+**Simulation run (2026-10-08, `cam_0`):** every gimbal command was answered
+(`SIYI simulation command dispatched: ...`), the measured joints followed (pitch −90°, −30°, yaw
+pan, back to 0), and each photo shows its view: `gimbal_down.png` looks straight down on the room,
+`gimbal_ahead.png` is tilted down, `gimbal_panned.png` is turned to the side. The mission landed
+and disarmed.
 
 ---
 
