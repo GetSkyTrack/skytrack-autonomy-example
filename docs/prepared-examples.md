@@ -112,7 +112,7 @@ Built-in models and their classes, from `/opt/skytrack/ai/mapping.json` in the d
 `firesmoke` 626 ms), 0 boxes each, which is expected in an empty world; the mission landed.
 
 Boxes come back in image pixels. To turn one into a ground position, use "Pixel to ground" in
-[spray_drone_specs.md](../contests/skytrack-hackathon-2026/hackathon-example-simi-finale/spray_drone_specs.md).
+[spray_drone_specs.md](../contests/skytrack-hackathon-2026/hackathon-example-semi-finale/spray_drone_specs.md).
 
 ---
 
